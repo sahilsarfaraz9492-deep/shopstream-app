@@ -3,19 +3,22 @@ pipeline {
   options {
     timeout(time: 20, unit: 'MINUTES')
   }
-  environment {
-    COMPOSE_PROJECT_NAME = "ss${BUILD_NUMBER}"
-  }
   stages {
     stage('Checkout') {
       steps { checkout scm }
     }
+    stage('Prepare') {
+      steps {
+        script {
+          env.COMPOSE_PROJECT_NAME = sh(returnStdout: true, script: 'echo "ss$(echo "${JOB_NAME}-${BUILD_NUMBER}" | cksum | cut -d" " -f1)"').trim()
+          env.GATEWAY_PORT = sh(returnStdout: true, script: 'echo $(( 20000 + $(echo "${JOB_NAME}-${BUILD_NUMBER}" | cksum | cut -d" " -f1) % 10000 ))').trim()
+          echo "Project: ${env.COMPOSE_PROJECT_NAME}, port: ${env.GATEWAY_PORT}"
+        }
+      }
+    }
     stage('Build and Start') {
       steps {
-        sh '''
-          export GATEWAY_PORT=$((18000 + BUILD_NUMBER % 1000))
-          docker compose up -d --build
-        '''
+        sh 'docker compose up -d --build'
       }
       post {
         success { githubNotify context: 'ci/build', status: 'SUCCESS', description: 'Docker images built and started' }
@@ -26,11 +29,10 @@ pipeline {
       steps {
         sh '''
           rm -f failed_path.txt
-          PORT=$((18000 + BUILD_NUMBER % 1000))
           for path in health api/orders api/users; do
             ok=0
             for i in $(seq 1 15); do
-              if curl -sf "localhost:$PORT/$path" > /dev/null; then ok=1; break; fi
+              if curl -sf "localhost:$GATEWAY_PORT/$path" > /dev/null; then ok=1; break; fi
               sleep 3
             done
             if [ "$ok" -ne 1 ]; then
@@ -73,6 +75,15 @@ pipeline {
   post {
     always {
       sh 'docker compose down -v --rmi local || true'
+    }
+    failure {
+      withCredentials([string(credentialsId: 'discord-webhook', variable: 'DISCORD_URL')]) {
+        sh '''
+          curl -s -H "Content-Type: application/json" \
+            -d "{\\"content\\":\\"BUILD FAILED: ${JOB_NAME} #${BUILD_NUMBER} - ${BUILD_URL}\\"}" \
+            "$DISCORD_URL"
+        '''
+      }
     }
   }
 }
