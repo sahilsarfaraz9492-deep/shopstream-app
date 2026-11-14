@@ -74,5 +74,14 @@ pipeline {
     always {
       sh 'docker compose down -v --rmi local || true'
     }
+    failure {
+      withCredentials([string(credentialsId: 'discord-webhook', variable: 'DISCORD_URL')]) {
+        sh '''
+          curl -s -H "Content-Type: application/json" \
+            -d "{\\"content\\":\\"BUILD FAILED: ${JOB_NAME} #${BUILD_NUMBER} - ${BUILD_URL}\\"}" \
+            "$DISCORD_URL"
+        '''
+      }
+    }
   }
 }
