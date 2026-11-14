@@ -1,0 +1,12 @@
+services:
+  orders:
+    build: ./orders-service
+  users:
+    build: ./users-service
+  gateway:
+    build: ./gateway
+    ports:
+      - "${GATEWAY_PORT:-8081}:80"
+    depends_on:
+      - orders
+      - users
