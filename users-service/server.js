@@ -12,3 +12,4 @@ app.get("/health", (req, res) => res.json({ status: "ok" }));
 app.get("/users", (req, res) => res.json(users));
 
 app.listen(3000, () => console.log(JSON.stringify({ service: "users", msg: "started" })));
+// webhook test
