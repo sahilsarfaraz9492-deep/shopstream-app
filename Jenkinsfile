@@ -71,6 +71,36 @@ pipeline {
         failure { githubNotify context: 'ci/security-scan', status: 'FAILURE', description: 'Security scan failed to run' }
       }
     }
+    stage('Push to ECR') {
+      when { branch 'main' }
+      steps {
+        withCredentials([
+          string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+          string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+        ]) {
+          sh '''
+            export AWS_DEFAULT_REGION=us-east-1
+            AWS=/snap/bin/aws
+            ACCOUNT=$($AWS sts get-caller-identity --query Account --output text)
+            REGISTRY=$ACCOUNT.dkr.ecr.us-east-1.amazonaws.com
+            TAG=$(git rev-parse --short HEAD)
+            $AWS ecr get-login-password | docker login --username AWS --password-stdin $REGISTRY
+            for svc in orders users gateway; do
+              docker tag ${COMPOSE_PROJECT_NAME}-$svc $REGISTRY/shopstream-$svc:$TAG
+              docker tag ${COMPOSE_PROJECT_NAME}-$svc $REGISTRY/shopstream-$svc:latest
+              docker push $REGISTRY/shopstream-$svc:$TAG
+              docker push $REGISTRY/shopstream-$svc:latest
+            done
+            docker logout $REGISTRY
+            echo "Pushed tag: $TAG"
+          '''
+        }
+      }
+      post {
+        success { githubNotify context: 'ci/push', status: 'SUCCESS', description: 'Images pushed to ECR' }
+        failure { githubNotify context: 'ci/push', status: 'FAILURE', description: 'ECR push failed - check AWS credentials and ECR repos' }
+      }
+    }
   }
   post {
     always {
